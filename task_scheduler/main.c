@@ -32,10 +32,9 @@ extern void initialise_monitor_handles(void);
 
 int main(void)
 {
-
  	enable_processor_faults();
 
-	init_scheduler_stack(SCHEDU_STACK_START);
+	init_scheduler_stack(SCHEDULER_STACK_START);
 
 	init_task_stack();
 
@@ -45,9 +44,10 @@ int main(void)
 
 	init_systick_timer(TICK_HZ);
 
-	switch_sp_to_psp();
+	switch_to_psp();
 
-	task1_handler();
+	task_start();
+	
     /* Loop forever */
 	for(;;);
 }
