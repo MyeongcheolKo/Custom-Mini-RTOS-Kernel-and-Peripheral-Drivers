@@ -424,8 +424,8 @@ void SPI_IRQ_handler(SPI_Handle_t *p_SPI_Handle){
 	uint8_t temp1, temp2;
 
 	//check if interrupt is TXEIE and RXNE is set, ie triggering interrupt when Tx buffer is empty
-	temp1 = ( (p_SPI_Handle->p_SPIx->SR >> SPI_SR_TXE) & 1);
-	temp2 = ( (p_SPI_Handle->p_SPIx->SR >> SPI_CR2_TXEIE) & 1);
+	temp1 = ( (p_SPI_Handle->p_SPIx->SR  >> SPI_SR_TXE)    & 1);
+	temp2 = ( (p_SPI_Handle->p_SPIx->CR2 >> SPI_CR2_TXEIE) & 1);
 
 	if(temp1 & temp2)
 	{
@@ -433,8 +433,8 @@ void SPI_IRQ_handler(SPI_Handle_t *p_SPI_Handle){
 	}
 
 	//check if interrupt is RXNEIE and RXNE is set, ie triggering interrupt when Rx buffer is not empty
-	temp1 = ( (p_SPI_Handle->p_SPIx->SR >> SPI_SR_RXNE) & 1);
-	temp2 = ( (p_SPI_Handle->p_SPIx->SR >> SPI_CR2_RXNEIE) & 1);
+	temp1 = ( (p_SPI_Handle->p_SPIx->SR  >> SPI_SR_RXNE)    & 1);
+	temp2 = ( (p_SPI_Handle->p_SPIx->CR2 >> SPI_CR2_RXNEIE) & 1);
 
 	if(temp1 & temp2)
 	{
@@ -442,8 +442,8 @@ void SPI_IRQ_handler(SPI_Handle_t *p_SPI_Handle){
 	}
 
 	//check if interrupt is ERRIE and OVR
-	temp1 = ( (p_SPI_Handle->p_SPIx->SR >> SPI_SR_OVR) & 1);
-	temp2 = ( (p_SPI_Handle->p_SPIx->SR >> SPI_CR2_ERRIE) & 1);
+	temp1 = ( (p_SPI_Handle->p_SPIx->SR  >> SPI_SR_OVR)   & 1);
+	temp2 = ( (p_SPI_Handle->p_SPIx->CR2 >> SPI_CR2_ERRIE) & 1);
 
 	if(temp1 & temp2)
 	{

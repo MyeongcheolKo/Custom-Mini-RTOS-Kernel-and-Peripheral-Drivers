@@ -267,12 +267,12 @@ typedef struct
 /*
  * clock enable macros for USART peripherals
  */
-#define USART1_PCLK_EN()	( RCC->APB2LPENR |= (1 << 4) )
-#define USART2_PCLK_EN()	( RCC->APB1LPENR |= (1 << 17) )
-#define USART3_PCLK_EN()	( RCC->APB1LPENR |= (1 << 18) )
-#define UART4_PCLK_EN()		( RCC->APB1LPENR |= (1 << 19) )
-#define UART5_PCLK_EN()		( RCC->APB1LPENR |= (1 << 20) )
-#define USART6_PCLK_EN()	( RCC->APB2LPENR |= (1 << 5) )
+#define USART1_PCLK_EN()	( RCC->APB2ENR |= (1 << 4) )
+#define USART2_PCLK_EN()	( RCC->APB1ENR |= (1 << 17) )
+#define USART3_PCLK_EN()	( RCC->APB1ENR |= (1 << 18) )
+#define UART4_PCLK_EN()		( RCC->APB1ENR |= (1 << 19) )
+#define UART5_PCLK_EN()		( RCC->APB1ENR |= (1 << 20) )
+#define USART6_PCLK_EN()	( RCC->APB2ENR |= (1 << 5) )
 
 /*
  * clock enable macros for SYSCFG
@@ -309,12 +309,12 @@ typedef struct
 /*
  * clock disable macros for USART peripherals
  */
-#define USART1_PCLK_DI()	( RCC->APB2LPENR &= ~(1 << 4) )
-#define USART2_PCLK_DI()	( RCC->APB1LPENR &= ~(1 << 17) )
-#define USART3_PCLK_DI()	( RCC->APB1LPENR &= ~(1 << 18) )
-#define UART4_PCLK_DI()		( RCC->APB1LPENR &= ~(1 << 19) )
-#define UART5_PCLK_DI()		( RCC->APB1LPENR &= ~(1 << 20) )
-#define USART6_PCLK_DI()	( RCC->APB2LPENR &= ~(1 << 5) )
+#define USART1_PCLK_DI()	( RCC->APB2ENR &= ~(1 << 4) )
+#define USART2_PCLK_DI()	( RCC->APB1ENR &= ~(1 << 17) )
+#define USART3_PCLK_DI()	( RCC->APB1ENR &= ~(1 << 18) )
+#define UART4_PCLK_DI()		( RCC->APB1ENR &= ~(1 << 19) )
+#define UART5_PCLK_DI()		( RCC->APB1ENR &= ~(1 << 20) )
+#define USART6_PCLK_DI()	( RCC->APB2ENR &= ~(1 << 5) )
 
 /*
  * macros to reset GPIO peripherals registers
@@ -333,9 +333,9 @@ typedef struct
  * macros to reset SPI peripheral registers
  */
 #define SPI1_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 12); RCC->APB2RSTR &= ~(1 << 12);}while(0)
-#define SPI2_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 14); RCC->APB2RSTR &= ~(1 << 12);}while(0)
-#define SPI3_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 15); RCC->APB2RSTR &= ~(1 << 12);}while(0)
-#define SPI4_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 13); RCC->APB2RSTR &= ~(1 << 12);}while(0)
+#define SPI2_REG_RESET()		do{ RCC->APB1RSTR |= (1 << 14); RCC->APB1RSTR &= ~(1 << 14);}while(0)
+#define SPI3_REG_RESET()		do{ RCC->APB1RSTR |= (1 << 15); RCC->APB1RSTR &= ~(1 << 15);}while(0)
+#define SPI4_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 13); RCC->APB2RSTR &= ~(1 << 13);}while(0)
 
 /*
  * macros to reset I2C peripheral registers
@@ -347,12 +347,12 @@ typedef struct
 /*
  * macros to reset USART peripheral registers
  */
-#define USART1_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 4); RCC->APB1RSTR &= ~(1 << 4);}while(0)
+#define USART1_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 4); RCC->APB2RSTR &= ~(1 << 4);}while(0)
 #define USART2_REG_RESET()		do{ RCC->APB1RSTR |= (1 << 17); RCC->APB1RSTR &= ~(1 << 17);}while(0)
 #define USART3_REG_RESET()		do{ RCC->APB1RSTR |= (1 << 18); RCC->APB1RSTR &= ~(1 << 18);}while(0)
 #define UART4_REG_RESET()		do{ RCC->APB1RSTR |= (1 << 19); RCC->APB1RSTR &= ~(1 << 19);}while(0)
 #define UART5_REG_RESET()		do{ RCC->APB1RSTR |= (1 << 20); RCC->APB1RSTR &= ~(1 << 20);}while(0)
-#define USART6_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 5); RCC->APB1RSTR &= ~(1 << 5);}while(0)
+#define USART6_REG_RESET()		do{ RCC->APB2RSTR |= (1 << 5); RCC->APB2RSTR &= ~(1 << 5);}while(0)
 
 /*
  * convert GPIO port to port code
