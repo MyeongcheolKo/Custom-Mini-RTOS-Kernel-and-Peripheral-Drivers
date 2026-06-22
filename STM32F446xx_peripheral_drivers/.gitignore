@@ -1,0 +1,10 @@
+# IDE
+.metadata/
+.settings/
+*.launch
+
+# Build outputs
+*.o
+*.elf
+*.map
+*.d
