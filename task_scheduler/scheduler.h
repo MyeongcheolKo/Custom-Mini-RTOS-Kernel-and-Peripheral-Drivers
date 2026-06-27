@@ -18,16 +18,14 @@ typedef struct
 	void (*task_handler)(void);
 }TCB_t;
 
-/*
-public interfaces
-*/
-void init_systick_timer(uint32_t tick_hz);
-__attribute__ ((naked)) void init_scheduler_stack(uint32_t schedu_top_of_stack);
-void init_task_stack(void);
-void switch_to_psp(void);
-void enable_processor_faults(void);
-void task_start(void);
-void task_delay(uint32_t tick_count);
+/* public interfaces */
+void os_init_systick_timer(uint32_t tick_hz);
+__attribute__ ((naked)) void os_init_scheduler_stack(uint32_t schedu_top_of_stack);
+void os_init_task_stack(void);
+void os_switch_to_psp(void);
+void os_enable_processor_faults(void);
+void os_task_start(void);
+void os_task_delay(uint32_t tick_count);
 
 
 #endif /* SCHEDULER_H_ */

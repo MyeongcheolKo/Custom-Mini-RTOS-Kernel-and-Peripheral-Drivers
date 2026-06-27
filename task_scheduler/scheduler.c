@@ -22,7 +22,7 @@ static void unblock_tasks(void);
 static void update_next_task(void);
 
 // configures SysTick to fire at tick_hz interrupts per second using the processor clock
-void init_systick_timer(uint32_t tick_hz)
+void os_init_systick_timer(uint32_t tick_hz)
 {
 	uint32_t count_val = (SYSTICK_CLOCK / tick_hz) - 1;
 	uint32_t *p_SYST_RVR = (uint32_t*)0xE000E014; // systick reload value register
@@ -41,7 +41,7 @@ void init_systick_timer(uint32_t tick_hz)
 }
 
 // sets MSP to the top of the scheduler stack before any C stack activity occurs
-__attribute__ ((naked)) void init_scheduler_stack(uint32_t scheduler_top_of_stack)
+__attribute__ ((naked)) void os_init_scheduler_stack(uint32_t scheduler_top_of_stack)
 {
 	/*
 	naked func here bc MSR MSP writes to the stack before a valid stack exists, so a compiler generated
@@ -57,7 +57,7 @@ __attribute__ ((naked)) void init_scheduler_stack(uint32_t scheduler_top_of_stac
 }
 
 // builds a dummy exception stack frame for each task so PendSV can restore it on first run
-void init_task_stack(void)
+void os_init_task_stack(void)
 {
 	/*
 		when first time the tasks are run, there were no past context
@@ -122,19 +122,19 @@ void init_task_stack(void)
 }
 
 // saves the current task's PSP into its TCB
-static void save_sp_value(uint32_t current_psp_val)
+static void os_save_sp_value(uint32_t current_psp_val)
 {
 	user_tasks[current_task].stack_pointer = current_psp_val;
 }
 
 // returns the saved PSP of the current task from its TCB
-static uint32_t get_sp_value(void)
+static uint32_t os_get_sp_value(void)
 {
 	return user_tasks[current_task].stack_pointer;
 }
 
 // switches the active stack pointer from MSP to PSP so tasks run on their own private stacks
-__attribute__((naked)) void switch_to_psp(void)  
+__attribute__((naked)) void os_switch_to_psp(void)  
 {
 	/*
 	naked func here bc we are calling BL, which corrupts LR, and MSR CONTROL to switch the active
@@ -161,13 +161,13 @@ __attribute__((naked)) void switch_to_psp(void)
 }
 
 // dispatches the current task; called once at startup to enter the scheduler from main
-void task_start(void)
+void os_task_start(void)
 {
 	user_tasks[current_task].task_handler();
 }
 
 // blocks the current task for tick_count ticks and yields to the next ready task
-void task_delay(uint32_t tick_count)
+void os_task_delay(uint32_t tick_count)
 {
 	// disable interrupt
 	INTERRUPT_DISABLE();
@@ -244,7 +244,7 @@ static void update_next_task(void)
 }
 
 // enables UsageFault, BusFault, and MemManageFault so they trap as their own exceptions
-void enable_processor_faults(void)
+void os_enable_processor_faults(void)
 {
 	uint32_t *p_SHCSR = (uint32_t*)0xE000ED24;
 	*p_SHCSR |= (1 << 18); // usage fault
