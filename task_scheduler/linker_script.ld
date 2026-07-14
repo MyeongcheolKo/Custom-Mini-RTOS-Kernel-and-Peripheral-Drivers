@@ -8,6 +8,7 @@
 
 _estack = ORIGIN(SRAM) + LENGTH(SRAM);
 _Min_Stack_Size = 0x400;
+_Min_Heap_Size = 0x200;
 
  SECTIONS
  {
@@ -63,6 +64,16 @@ _Min_Stack_Size = 0x400;
         _end = .;
         __end__ = .;
         end = .;
+    } > SRAM
+
+    ._user_heap_stack :
+    {
+        . = ALIGN(8);
+        PROVIDE ( end = . );
+        PROVIDE ( _end = . );
+        . = . + _Min_Heap_Size;
+        . = . + _Min_Stack_Size;
+        . = ALIGN(8);
     } > SRAM
 
  }

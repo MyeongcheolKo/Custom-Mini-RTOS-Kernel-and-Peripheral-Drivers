@@ -30,31 +30,44 @@
 //semihosting init fcn
 extern void initialise_monitor_handles(void);
 
+void error_hanlder(void);
+
+void task1_handler(void);
+void task2_handler(void);
+void task3_handler(void);
+void task4_handler(void);
+
+uint32_t scheduler_stack[OS_SCHEDULER_STACK_WORDS] __attribute__((aligned(8)));
+
+uint32_t task1_stack[1024] __attribute__((aligned(8)));
+uint32_t task2_stack[1024] __attribute__((aligned(8)));
+uint32_t task3_stack[1024] __attribute__((aligned(8)));
+uint32_t task4_stack[1024] __attribute__((aligned(8)));
+
 int main(void)
 {
- 	enable_processor_faults();
+ 	os_enable_processor_faults();
 
-	init_scheduler_stack(SCHEDULER_STACK_START);
+	uint32_t scheduler_stack_top = (uint32_t)(scheduler_stack + sizeof(scheduler_stack) / sizeof(scheduler_stack[0]));
+	os_init_scheduler_stack(scheduler_stack_top);
 
-	init_task_stack();
+	if (os_task_create(task1_handler, 2, task1_stack, sizeof(task1_stack)) != OS_OK) error_hanlder();
+	if (os_task_create(task2_handler, 2, task2_stack, sizeof(task2_stack)) != OS_OK) error_hanlder();
+	if (os_task_create(task3_handler, 1, task3_stack, sizeof(task3_stack)) != OS_OK) error_hanlder();
+	if (os_task_create(task4_handler, 2, task4_stack, sizeof(task4_stack)) != OS_OK) error_hanlder();
 
-	initialise_monitor_handles();
+	os_init();
 
-	printf("Task schedular\n");
+	printf("Task schedular initialized\n");
 
-	init_systick_timer(TICK_HZ);
+	os_init_systick_timer(TICK_HZ);
 
-	switch_to_psp();
+	os_switch_to_psp();
 
-	task_start();
-	
+	os_task_start();
+
     /* Loop forever */
 	for(;;);
-}
-
-void idle_task(void)
-{
-	while(1);
 }
 
 void task1_handler(void)
@@ -63,7 +76,7 @@ void task1_handler(void)
 	while(1)
 	{
 		printf("This is task 1\n");
-		task_delay(1000);
+		os_task_delay(5);
 	}
 }
 void task2_handler(void)
@@ -71,7 +84,7 @@ void task2_handler(void)
 	while(1)
 	{
 		printf("This is task 2 \n");
-		task_delay(500);
+		os_task_delay(4);
 
 	}
 }
@@ -80,7 +93,7 @@ void task3_handler(void)
 	while(1)
 	{
 		printf("This is task 3\n");
-		task_delay(250);
+		os_task_delay(500);
 
 	}
 }
@@ -89,8 +102,13 @@ void task4_handler(void)
 	while(1)
 	{
 		printf("This is task 4\n");
-		task_delay(2000);
+		os_task_delay(2000);
 	}
+}
+
+void error_hanlder(void)
+{
+	while(1);
 }
 
 
