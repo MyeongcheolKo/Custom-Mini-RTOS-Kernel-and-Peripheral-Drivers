@@ -89,6 +89,10 @@ void os_init(void)
 	tcb->priority_level = 0; // priority 0 reserved for idle task, highest priority
 	tcb->current_state = TASK_READY;
 	tcb->stack_pointer = init_task_stack_frame(idle_task_hanlder, idle_task_stack, sizeof(idle_task_stack));
+
+	// configure PendSV to lowest priority so it is only triggered when no other exceptions are active
+	uint32_t *p_SHPR3 = (uint32_t *)0xE000ED20;
+	*p_SHPR3 |= (0xFFU << 16);
 }
 
 // switches the active stack pointer from MSP to PSP so tasks run on their own private stacks
