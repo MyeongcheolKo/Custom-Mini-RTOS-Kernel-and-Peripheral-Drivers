@@ -250,7 +250,8 @@ static void update_next_task(void)
 	if (task_count <= 1) return;
 	for (int i = 1; i < task_count; i++)
 	{
-		if (user_tasks[i].current_state == TASK_READY && user_tasks[i].priority_level < highest_priority)
+		if (user_tasks[i].current_state == TASK_READY && 
+			user_tasks[i].priority_level < highest_priority)
 		{
 			highest_priority = user_tasks[i].priority_level;
 			task_to_run = i;
@@ -332,27 +333,23 @@ void SysTick_Handler(void)
 void HardFault_Handler(void)
 {
 	printf("hard fault\n");
-	while (1)
-		;
+	while(1);
 }
 
 void MemManage_Handler(void)
 {
 	printf("mem fault\n");
-	while (1)
-		;
+	while(1);
 }
 
 void BusFault_Handler(void)
 {
 	printf("bus fault\n");
-	while (1)
-		;
+	while(1);
 }
 
 void UsageFault_Handler(void)
 {
 	printf("usage fault\n");
-	while (1)
-		;
+	while(1);
 }
