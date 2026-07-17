@@ -46,6 +46,9 @@ uint32_t task4_stack[1024] __attribute__((aligned(8)));
 
 int main(void)
 {
+	// keep the debugger awake when the core is sleeping, so can still debug while the core is sleeping
+	*(volatile uint32_t *)0xE0042004 |= (1 << 0); // STM32F4: DBGMCU_CR @ 0xE0042004, bit0 DBG_SLEEP, bit1 DBG_STOP, bit2 DBG_STANDBY
+
  	os_enable_processor_faults();
 
 	uint32_t scheduler_stack_top = (uint32_t)(scheduler_stack + sizeof(scheduler_stack) / sizeof(scheduler_stack[0]));
