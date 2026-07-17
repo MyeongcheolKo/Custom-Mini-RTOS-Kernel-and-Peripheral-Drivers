@@ -228,7 +228,7 @@ static void unblock_tasks(void)
 		// if it is blocked and the wakeup tick has been reached, regardless of the block reason
 		if (user_tasks[i].current_state == TASK_BLOCKED && 
 			user_tasks[i].wakeup_tick != 0 && // no wakeup tick, wait forever, don't unblock
-			systick_count >= user_tasks[i].wakeup_tick)
+			(int32_t)(systick_count - user_tasks[i].wakeup_tick) >= 0) // Compare the difference so that it works when systick_count wraps around
 		{
 			user_tasks[i].current_state = TASK_READY;
 			user_tasks[i].block_reason = BLOCKED_NONE;
