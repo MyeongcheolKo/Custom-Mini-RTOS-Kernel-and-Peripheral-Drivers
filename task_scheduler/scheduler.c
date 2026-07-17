@@ -75,6 +75,7 @@ __attribute__((naked)) void os_init_scheduler_stack(uint32_t scheduler_top_of_st
 	tcb->priority_level = priority;
 	tcb->current_state = TASK_READY;
 	tcb->stack_pointer = init_task_stack_frame(task_handler, task_stack_base, task_stack_size);
+	// no need to set block_reason bc it is zero initialized and BLOCKED_NONE is 0
 	
 	task_count++;
 	return OS_OK;
@@ -88,7 +89,6 @@ void os_init(void)
 	tcb->priority_level = 0; // priority 0 reserved for idle task, highest priority
 	tcb->current_state = TASK_READY;
 	tcb->stack_pointer = init_task_stack_frame(idle_task_hanlder, idle_task_stack, sizeof(idle_task_stack));
-	
 }
 
 // switches the active stack pointer from MSP to PSP so tasks run on their own private stacks
@@ -136,7 +136,8 @@ void os_task_delay(uint32_t tick_count)
 	{
 		// set wakeup time for the task
 		user_tasks[current_task].wakeup_tick = systick_count + tick_count;
-		// change to blocked state
+		// change to blocked state and specify reason
+		user_tasks[current_task].block_reason = BLOCKED_DELAY;
 		user_tasks[current_task].current_state = TASK_BLOCKED;
 		// pend pendSV exception
 		pend_pendsv(); // switches to another task to allow other tasks to run
@@ -223,13 +224,15 @@ static void unblock_tasks(void)
 	// unblock any tasks that are qualified for running
 	for (int i = 1; i < task_count; i++) // ignores the idle task
 	{
-		if (user_tasks[i].current_state == TASK_BLOCKED)
+		// wake up any task that has a wakeup deadline(task_delay wake tick or semaphore and mutex timeout) 
+		// if it is blocked and the wakeup tick has been reached, regardless of the block reason
+		if (user_tasks[i].current_state == TASK_BLOCKED && 
+			user_tasks[i].wakeup_tick != 0 && // no wakeup tick, wait forever, don't unblock
+			systick_count >= user_tasks[i].wakeup_tick)
 		{
-			// blocking period has elapsed
-			if (systick_count >= user_tasks[i].wakeup_tick)
-			{
-				user_tasks[i].current_state = TASK_READY;
-			}
+			user_tasks[i].current_state = TASK_READY;
+			user_tasks[i].block_reason = BLOCKED_NONE;
+			user_tasks[i].wakeup_tick = 0; // reset wakeup tick
 		}
 	}
 }
@@ -243,7 +246,7 @@ static void update_next_task(void)
 	
 	uint8_t task_to_run = 0;
 	uint8_t highest_priority = 255;
-	// finds the next task that is ready to run
+	// finds the next task that is ready to run with highest priority (lowest priority number)
 	if (task_count <= 1) return;
 	for (int i = 1; i < task_count; i++)
 	{
@@ -271,30 +274,30 @@ static void idle_task_hanlder(void)
 
 /*---------Handlers---------*/
 
-// context switch handler: saves SF2 of current task, selects next task, restores its SF2 (SF1 is saved/restored automatically by hardware)
+// performs the context switch: saves SF2 of current task, selects next task, restores its SF2 (SF1 is saved/restored automatically by hardware)
 __attribute__((naked)) void PendSV_Handler(void)
 {
 	/*
 	naked here to save SF2 from task A's PSP and restores SF2 from task B's PSP — two different stacks.
 	A compiler prologue/epilogue assumes push and pop are symmetric on the same stack, so it would
 	corrupt both tasks' stacks. The return must also be a bare BX LR with EXC_RETURN in LR to
-	trigger exception return; a generated epilogue would emit its own return sequence instead.
+	trigger exception return, a generated epilogue would emit its own return sequence instead.
 	*/
 
-	// get current running task's PSP value
-	__asm volatile("MRS R0, PSP"); // store the PSP value to R0
+	// store the current running task's PSP value to R0
+	__asm volatile("MRS R0, PSP");
 
-	// using the PSP value, store SF2(R4 to R11)
 	/*
+	using the PSP value, store SF2(R4 to R11)
 	notes:  can't just use PUSH b/c the handler always uses MSP, which will only push the values to the MSP stack, not the task private stack
-			so use STMDB to save the values at the PSP address extracted into R0
-			STMDB stores thos values into multiple registers and decrement first then store
+			so save the values at the PSP address extracted into R0 by using STMDB 
+			STMDB stores those values into multiple registers and decrement first then store
 	*/
 	__asm volatile("STMDB R0!, {R4-R11}"); // read registers R4-R11, store into memory at R0, R0 is updated after each acess
 										   // "!" the final address that is stored will be loaded back to R0
 
 	// save the current value of PSP
-	__asm volatile("PUSH {LR}");		// push LR onto the stack first, because c fcn calls will corrupt LR
+	__asm volatile("PUSH {LR}");		// push LR (holds EXC_RETURN) onto the stack first, because BL calls will corrupt LR
 	__asm volatile("BL save_sp_value"); // R0 is passed as parameter by default
 
 	// decide next task to run
@@ -310,10 +313,10 @@ __attribute__((naked)) void PendSV_Handler(void)
 	// update PSP and exit
 	__asm volatile("MSR PSP, R0");
 
-	// pop back the LR pushed to stack
+	// restore EXC_RETURN into LR
 	__asm volatile("POP {LR}");
 
-	// return
+	// performs the exception return, and hardware pops SF1 (including PC) from the newly selected task's PSP
 	__asm volatile("BX LR");
 }
 

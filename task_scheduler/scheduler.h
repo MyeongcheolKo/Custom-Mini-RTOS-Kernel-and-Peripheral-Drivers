@@ -31,17 +31,24 @@ typedef enum {
 	OS_ERR_NULL_PTR
 } os_err_t;
 
-/* TASK_STATES */
 typedef enum {
 	TASK_READY,
 	TASK_RUNNING,
 	TASK_BLOCKED
 } task_state_t;
 
+typedef enum {
+	BLOCKED_NONE = 0, // task is not blocked
+	BLOCKED_DELAY,
+	BLOCKED_SEM,
+	BLOCKED_MUTEX
+} task_block_reason_t;
+
 typedef struct {
 	uint32_t stack_pointer;
 	uint32_t wakeup_tick;
 	task_state_t current_state;
+	task_block_reason_t block_reason;
 	uint8_t priority_level; // lower value = higher priority, 0 is reserved for idle task
 	void (*task_handler)(void);
 } TCB_t;
