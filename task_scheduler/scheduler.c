@@ -22,7 +22,7 @@ __attribute__((used)) static uint32_t get_sp_value(void);
 __attribute__((used)) static void update_tick_count(void);
 static void pend_pendsv(void);
 static void unblock_tasks(void);
-__attribute__((used)) static void update_next_task(void);
+__attribute__((used)) static void schedule_next_task(void);
 static void idle_task_hanlder(void);
 
 // configures SysTick to fire at tick_hz interrupts per second using the processor clock
@@ -60,7 +60,7 @@ __attribute__((naked)) void os_init_scheduler_stack(uint32_t scheduler_top_of_st
 	__asm volatile("BX LR"); // BX (branch and exchange to a adress) LR(address of the caller)
 }
 
-	os_err_t os_task_create(void (*task_handler)(void), uint8_t priority, uint32_t *task_stack_base, uint32_t task_stack_size)
+os_err_t os_task_create(void (*task_handler)(void), uint8_t priority, uint32_t *task_stack_base, uint32_t task_stack_size)
 {
 	if (task_count >= OS_MAX_TASKS)
 		return OS_ERR_MAX_TASKS;
@@ -91,8 +91,8 @@ void os_init(void)
 	tcb->stack_pointer = init_task_stack_frame(idle_task_hanlder, idle_task_stack, sizeof(idle_task_stack));
 
 	// configure PendSV to lowest priority so it is only triggered when no other exceptions are active
-	uint32_t *p_SHPR3 = (uint32_t *)0xE000ED20;
-	*p_SHPR3 |= (0xFFU << 16);
+	uint32_t *p_SHPR3 = (uint32_t *)0xE000ED20; // system Handler Priority Register 3
+	*p_SHPR3 |= (0xFFU << 16); // PRI_14 (PendSV) = bits [23:16]
 }
 
 // switches the active stack pointer from MSP to PSP so tasks run on their own private stacks
@@ -125,7 +125,7 @@ __attribute__((naked)) void os_switch_to_psp(void)
 // dispatches the current task; called once at startup to enter the scheduler from main
 void os_task_start(void)
 {
-	update_next_task();
+	schedule_next_task();
 	user_tasks[current_task].task_handler();
 }
 
@@ -242,7 +242,7 @@ static void unblock_tasks(void)
 }
 
 // selects the next ready task in priority round-robin order, falls back to idle if all tasks are blocked
-static void update_next_task(void)
+static void schedule_next_task(void)
 {
 	// task that was running (and didn't block) goes back to TASK_READY
     if (user_tasks[current_task].current_state == TASK_RUNNING) 
@@ -279,6 +279,15 @@ static void idle_task_hanlder(void)
 
 /*---------Handlers---------*/
 
+void SysTick_Handler(void)
+{
+	update_tick_count();
+
+	unblock_tasks();
+
+	pend_pendsv();
+}
+
 // performs the context switch: saves SF2 of current task, selects next task, restores its SF2 (SF1 is saved/restored automatically by hardware)
 __attribute__((naked)) void PendSV_Handler(void)
 {
@@ -306,7 +315,7 @@ __attribute__((naked)) void PendSV_Handler(void)
 	__asm volatile("BL save_sp_value"); // R0 is passed as parameter by default
 
 	// decide next task to run
-	__asm volatile("BL update_next_task");
+	__asm volatile("BL schedule_next_task");
 
 	// get the task's past PSP value, return value is stored in R0
 	__asm volatile("BL get_sp_value");
@@ -323,15 +332,6 @@ __attribute__((naked)) void PendSV_Handler(void)
 
 	// performs the exception return, and hardware pops SF1 (including PC) from the newly selected task's PSP
 	__asm volatile("BX LR");
-}
-
-void SysTick_Handler(void)
-{
-	update_tick_count();
-
-	unblock_tasks();
-
-	pend_pendsv();
 }
 
 void HardFault_Handler(void)
