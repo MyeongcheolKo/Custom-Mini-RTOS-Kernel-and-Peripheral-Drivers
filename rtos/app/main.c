@@ -8,9 +8,6 @@
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
-//semihosting init fcn
-extern void initialise_monitor_handles(void);
-
 // enables UsageFault, BusFault, and MemManageFault so they trap as their own exceptions instead of escalating to HardFault
 void enable_processor_faults(void);
 

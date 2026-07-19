@@ -8,7 +8,6 @@ INCLUDES = -Iapp -Ibsp -Iconfig -Ikernel -Iport/arm/cortex_m4 -Idrivers
 
 CFLAGS     = -c -mcpu=$(MACH) -mthumb -mfloat-abi=soft -std=gnu11 -Wall -O0 -g $(INCLUDES)
 LDFLAGS    = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=nano.specs  -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final.map
-LDFLAGS_SH = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=rdimon.specs -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final_sh.map
 
 # source groups (one per layer) 
 KERNEL_SRCS = kernel/scheduler.c \
@@ -29,9 +28,6 @@ DRIVER_OBJS = $(addprefix $(BUILD_DIR)/,$(DRIVER_SRCS:.c=.o))
 APP_OBJS    = $(addprefix $(BUILD_DIR)/,$(APP_SRCS:.c=.o))
 BSP_OBJS    = $(addprefix $(BUILD_DIR)/,$(BSP_SRCS:.c=.o))
 
-# semihosting drops our syscalls.c (rdimon.specs supplies the I/O syscalls)
-BSP_OBJS_SH = $(filter-out $(BUILD_DIR)/bsp/syscalls.o,$(BSP_OBJS))
-
 LIBRTOS    = $(BUILD_DIR)/librtos.a
 LIBDRIVERS = $(BUILD_DIR)/libdrivers.a
 
@@ -42,17 +38,12 @@ LIBDRIVERS = $(BUILD_DIR)/libdrivers.a
 # handlers, so it links on demand (only what the app actually references).
 WHOLE_RTOS = -Wl,--whole-archive $(LIBRTOS) -Wl,--no-whole-archive
 
-.PHONY: all kernel drivers semi clean load
-
 # full integrated firmware (app + bsp + kernel + drivers)
 all: $(BUILD_DIR)/final.elf
 
 # build a layer on its own (kernel has zero driver dependencies, and vice versa)
 kernel:  $(LIBRTOS)
 drivers: $(LIBDRIVERS)
-
-# semihosting firmware (printf over the debugger)
-semi: $(BUILD_DIR)/final_sh.elf
 
 # compile: any .c -> build/.../.o, creating mirrored subdirs
 $(BUILD_DIR)/%.o: %.c
@@ -69,9 +60,6 @@ $(LIBDRIVERS): $(DRIVER_OBJS)
 # link: app + bsp objects against both libs
 $(BUILD_DIR)/final.elf: $(APP_OBJS) $(BSP_OBJS) $(LIBRTOS) $(LIBDRIVERS)
 	$(CC) $(LDFLAGS) $(APP_OBJS) $(BSP_OBJS) $(WHOLE_RTOS) $(LIBDRIVERS) -o $@
-
-$(BUILD_DIR)/final_sh.elf: $(APP_OBJS) $(BSP_OBJS_SH) $(LIBRTOS) $(LIBDRIVERS)
-	$(CC) $(LDFLAGS_SH) $(APP_OBJS) $(BSP_OBJS_SH) $(WHOLE_RTOS) $(LIBDRIVERS) -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)
