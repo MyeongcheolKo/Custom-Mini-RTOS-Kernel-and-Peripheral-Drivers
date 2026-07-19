@@ -1,42 +1,77 @@
-CC = arm-none-eabi-gcc
+CC   = arm-none-eabi-gcc
+AR   = arm-none-eabi-ar
 MACH = cortex-m4
 BUILD_DIR = build
 
-# header file seach paths
-INCLUDES += -Iapp -Ibsp -Iconfig -Ikernel -Iport/arm/cortex_m4
+# header search paths
+INCLUDES = -Iapp -Ibsp -Iconfig -Ikernel -Iport/arm/cortex_m4 -Idrivers
 
-CFLAGS = -c -mcpu=$(MACH) -mthumb -mfloat-abi=soft -std=gnu11 -Wall -O0 -g $(INCLUDES)
-LDFLAGS = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=nano.specs -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final.map
-LDFLAGS_SH = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=rdimon.specs -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final.map
+CFLAGS     = -c -mcpu=$(MACH) -mthumb -mfloat-abi=soft -std=gnu11 -Wall -O0 -g $(INCLUDES)
+LDFLAGS    = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=nano.specs  -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final.map
+LDFLAGS_SH = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=rdimon.specs -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final_sh.map
 
-# every source, with its subdir
-SRCS = app/main.c \
-       kernel/scheduler.c \
-       port/arm/cortex_m4/port.c \
-       bsp/startup.c \
-       bsp/syscalls.c \
-       bsp/sysmem.c
+# source groups (one per layer) 
+KERNEL_SRCS = kernel/scheduler.c \
+              port/arm/cortex_m4/port.c
+DRIVER_SRCS = drivers/GPIO_driver.c \
+              drivers/I2C_driver.c \
+              drivers/SPI_driver.c \
+              drivers/USART_driver.c \
+              drivers/rcc.c
+APP_SRCS    = app/main.c
+BSP_SRCS    = bsp/startup.c \
+              bsp/syscalls.c \
+              bsp/sysmem.c
 
-# semihosting: drop syscalls.c, rdimon.specs supplies the I/O syscalls
-OBJS_SH = $(filter-out $(BUILD_DIR)/bsp/syscalls.o,$(OBJS))
+# src/main.c -> build/src/main.o (mirrors the tree)
+KERNEL_OBJS = $(addprefix $(BUILD_DIR)/,$(KERNEL_SRCS:.c=.o))
+DRIVER_OBJS = $(addprefix $(BUILD_DIR)/,$(DRIVER_SRCS:.c=.o))
+APP_OBJS    = $(addprefix $(BUILD_DIR)/,$(APP_SRCS:.c=.o))
+BSP_OBJS    = $(addprefix $(BUILD_DIR)/,$(BSP_SRCS:.c=.o))
 
-# app/main.c -> build/app/main.o, kernel/scheduler.c -> build/kernel/scheduler.o, ...
-OBJS = $(addprefix $(BUILD_DIR)/,$(SRCS:.c=.o))
+# semihosting drops our syscalls.c (rdimon.specs supplies the I/O syscalls)
+BSP_OBJS_SH = $(filter-out $(BUILD_DIR)/bsp/syscalls.o,$(BSP_OBJS))
 
+LIBRTOS    = $(BUILD_DIR)/librtos.a
+LIBDRIVERS = $(BUILD_DIR)/libdrivers.a
+
+# librtos.a holds the ISRs (PendSV_Handler / SysTick_Handler). startup.c only
+# weak-aliases those to Default_Handler, so unless the whole archive is force-linked
+# the linker can keep the weak stubs and context switching silently dies. Pull the
+# whole kernel archive so the strong handlers win. libdrivers.a has no vector-table
+# handlers, so it links on demand (only what the app actually references).
+WHOLE_RTOS = -Wl,--whole-archive $(LIBRTOS) -Wl,--no-whole-archive
+
+.PHONY: all kernel drivers semi clean load
+
+# full integrated firmware (app + bsp + kernel + drivers)
 all: $(BUILD_DIR)/final.elf
+
+# build a layer on its own (kernel has zero driver dependencies, and vice versa)
+kernel:  $(LIBRTOS)
+drivers: $(LIBDRIVERS)
+
+# semihosting firmware (printf over the debugger)
 semi: $(BUILD_DIR)/final_sh.elf
 
-# build all .c files into .o files in the build dir, preserving the subdir structure
+# compile: any .c -> build/.../.o, creating mirrored subdirs
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< -o $@
 
+# static libraries
+$(LIBRTOS): $(KERNEL_OBJS)
+	$(AR) rcs $@ $^
 
-$(BUILD_DIR)/final.elf: $(OBJS)
-	$(CC) $(LDFLAGS) $^ -o $@
+$(LIBDRIVERS): $(DRIVER_OBJS)
+	$(AR) rcs $@ $^
 
-$(BUILD_DIR)/final_sh.elf: $(OBJS_SH)
-	$(CC) $(LDFLAGS_SH) $^ -o $@
+# link: app + bsp objects against both libs
+$(BUILD_DIR)/final.elf: $(APP_OBJS) $(BSP_OBJS) $(LIBRTOS) $(LIBDRIVERS)
+	$(CC) $(LDFLAGS) $(APP_OBJS) $(BSP_OBJS) $(WHOLE_RTOS) $(LIBDRIVERS) -o $@
+
+$(BUILD_DIR)/final_sh.elf: $(APP_OBJS) $(BSP_OBJS_SH) $(LIBRTOS) $(LIBDRIVERS)
+	$(CC) $(LDFLAGS_SH) $(APP_OBJS) $(BSP_OBJS_SH) $(WHOLE_RTOS) $(LIBDRIVERS) -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)
