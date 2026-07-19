@@ -7,7 +7,4 @@
 *.launch
 
 # Build outputs
-*.o
-*.elf
-*.map
-*.d
+build/

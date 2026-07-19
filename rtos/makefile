@@ -1,35 +1,45 @@
 CC = arm-none-eabi-gcc
 MACH = cortex-m4
-CFLAGS = -c -mcpu=$(MACH) -mthumb -mfloat-abi=soft -std=gnu11 -Wall -O0 -g
-LDFLAGS = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=nano.specs -T linker_script.ld -Wl,-Map=final.map
-LDFLAGS_SH = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=rdimon.specs -T linker_script.ld -Wl,-Map=final.map
+BUILD_DIR = build
 
-all:main.o scheduler.o syscalls.o sysmem.o startup.o final.elf
+# header file seach paths
+INCLUDES += -Iapp -Ibsp -Iconfig -Ikernel -Iport/arm/cortex_m4
 
-semi:main.o scheduler.o sysmem.o startup.o final_sh.elf
+CFLAGS = -c -mcpu=$(MACH) -mthumb -mfloat-abi=soft -std=gnu11 -Wall -O0 -g $(INCLUDES)
+LDFLAGS = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=nano.specs -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final.map
+LDFLAGS_SH = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=rdimon.specs -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final.map
 
-main.o:main.c
-	$(CC) $(CFLAGS) $^ -o $@
+# every source, with its subdir
+SRCS = app/main.c \
+       kernel/scheduler.c \
+       port/arm/cortex_m4/port.c \
+       bsp/startup.c \
+       bsp/syscalls.c \
+       bsp/sysmem.c
 
-scheduler.o:scheduler.c
-	$(CC) $(CFLAGS) $^ -o $@
+# semihosting: drop syscalls.c, rdimon.specs supplies the I/O syscalls
+OBJS_SH = $(filter-out $(BUILD_DIR)/bsp/syscalls.o,$(OBJS))
 
-sysmem.o:sysmem.c
-	$(CC) $(CFLAGS) $^ -o $@
+# app/main.c -> build/app/main.o, kernel/scheduler.c -> build/kernel/scheduler.o, ...
+OBJS = $(addprefix $(BUILD_DIR)/,$(SRCS:.c=.o))
 
-syscalls.o:syscalls.c
-	$(CC) $(CFLAGS) $^ -o $@
+all: $(BUILD_DIR)/final.elf
+semi: $(BUILD_DIR)/final_sh.elf
 
-startup.o:startup.c
-	$(CC) $(CFLAGS) $^ -o $@
+# build all .c files into .o files in the build dir, preserving the subdir structure
+$(BUILD_DIR)/%.o: %.c
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $< -o $@
 
-final.elf:main.o scheduler.o startup.o syscalls.o sysmem.o
+
+$(BUILD_DIR)/final.elf: $(OBJS)
 	$(CC) $(LDFLAGS) $^ -o $@
 
-final_sh.elf:main.o scheduler.o startup.o sysmem.o
+$(BUILD_DIR)/final_sh.elf: $(OBJS_SH)
 	$(CC) $(LDFLAGS_SH) $^ -o $@
+
 clean:
-	rm -rf *.o *.elf
+	rm -rf $(BUILD_DIR)
 
 load:
 	openocd -f board/st_nucleo_f4.cfg
