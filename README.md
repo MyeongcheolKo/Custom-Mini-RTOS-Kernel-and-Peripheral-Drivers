@@ -1,9 +1,10 @@
 # Custom-Mini-RTOS
 
-A mini RTOS kernel for ARM Cortex-M built from scratch, targeting STM32F446xx, including bare-metal infrastructure (linker script, startup code) and peripheral drivers.
+A mini RTOS kernel for ARM Cortex-M built from scratch, targeting STM32F446xx. The kernel core is portable C with the architecture-specific code isolated in a port layer, and the project also includes bare-metal infrastructure (linker script, startup code) and a peripheral driver library.
 
 ## Table of Contents
-- [Task Scheduler (Kernel)](#task-schedulerkernel)
+- [Project Structure](#project-structure)
+- [Kernel](#kernel)
 - [Peripheral Drivers](#peripheral-drivers)
   - [GPIO Driver](#gpio-driver)
   - [SPI Driver](#spi-driver)
@@ -15,16 +16,42 @@ A mini RTOS kernel for ARM Cortex-M built from scratch, targeting STM32F446xx, i
   - [Linker Script](#linker-script)
   - [Startup Code](#startup-code)
   - [Build System (Makefile)](#build-system-makefile)
-- [See It In Action!](#see-it-in-ation)
+- [See It In Action!](#see-it-in-action)
 - [Ideas for Future Improvements](#ideas-for-future-improvements)
 
-# Task Scheduler(Kernel)
+# Project Structure
 
-The scheduler manages 4 user tasks plus an idle task, using hardware features of the ARM Cortex-M architecture:
+The project is organized into layers, each buildable on its own:
+
+```
+.
+├── kernel/                    # portable RTOS core (pure C, no arch code)
+│   ├── scheduler.c/.h         # public API + scheduling logic
+│   └── scheduler_internal.h   # core <-> port interface
+├── port/arm/cortex_m4/        # architecture port (all ARM asm + register access)
+│   └── port.c/.h              # context switch, SysTick/PendSV setup, critical sections
+├── config/
+│   └── osConfig.h             # compile-time kernel config (tick rate, stack sizes, ...)
+├── drivers/                   # STM32F446xx peripheral HAL (GPIO, SPI, I2C, USART, RCC)
+├── bsp/                       # board bring-up: startup.c, linker_script.ld, syscalls
+├── sample_apps/
+│   ├── kernel/                # RTOS demos (round_robin_priority.c, ...)
+│   └── driver/                # peripheral demos (LED_toggle.c, SPI_testing.c, ...)
+└── makefile
+```
+
+The **kernel** and **drivers** build into independent static libraries (`librtos.a`, `libdrivers.a`) with no dependency on each other — the kernel compiles with zero driver code, and vice versa. Only the `port/` layer is Cortex-M4 specific; the kernel core is portable C.
+
+# Kernel
+
+A preemptive, priority-based scheduler that manages user tasks plus an idle task, using hardware features of the ARM Cortex-M architecture:
 
 - **SysTick Timer** — Generates periodic interrupts (1ms ticks) to drive scheduling
 - **PendSV Exception** — Performs the actual context switch at the lowest priority
 - **Dual Stack Pointers** — MSP for kernel/handlers, PSP for user tasks
+- **Priority scheduling** — On each tick the highest-priority `READY` task is selected (lower priority number = higher priority; `0` reserved for the idle task)
+
+The kernel is split into a **portable core** (`kernel/` — scheduling logic, TCB bookkeeping, blocking/tick handling; pure C) and an **architecture port** (`port/arm/cortex_m4/` — context switch, SysTick/PendSV setup, critical sections; all ARM asm and register access). Applications include a single kernel header — `scheduler.h` — which exposes all public-facing APIs (`scheduler_internal.h`, the core↔port glue stays in a separate header and user should not include it). Only the `port` needs rewriting to target a different architecture.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      SRAM Layout                        │
@@ -42,21 +69,21 @@ The scheduler manages 4 user tasks plus an idle task, using hardware features of
 │  Idle Task Stack (PSP)                                  │
 └─────────────────────────────────────────────────────────┘
 How It Works: 
-    ┌──────────┐   task_delay()   ┌─────────┐
-    │  READY   │ ---------------> │ BLOCKED │
-    └──────────┘                  └─────────┘
+    ┌──────────┐  os_task_delay()  ┌─────────┐
+    │  READY   │ ----------------> │ BLOCKED │
+    └──────────┘                   └─────────┘
          |                             |
-         |      block_count expires    |
+         |     wakeup_tick reached     |
          └──────<───────<────────<─────┘
 ```
 
 ### Task Lifecycle
 
 - All tasks start in `READY` state
-- When a task calls `task_delay(ticks)`, it transitions to `BLOCKED`
-- The scheduler skips blocked tasks during round-robin selection
-- Global `tick_count` gets updated at every `SysTick_Handler`
-- When global `tick_count` reaches the task's `block_count`, it becomes `READY` again
+- When a task calls `os_task_delay(ticks)`, it transitions to `BLOCKED`
+- The scheduler skips blocked tasks and selects the highest-priority `READY` task
+- Global `systick_count` gets updated at every `SysTick_Handler`
+- When `systick_count` reaches the task's `wakeup_tick`, it becomes `READY` again
 
 ### Context Switch Flow
 ```
@@ -84,15 +111,15 @@ SysTick fires (every 1ms)
   500ms, 250ms, and 2000ms: Task1's real wait time = 1000 + 500 + 250 + 2000 = 3750ms. By adding a blocking state and using the SysTick timer, a blocked task is skipped during scheduling and the scheduler
   immediately moves to the next ready task. This way each task's delay is independent of what other tasks are doing.
 
-- **Idle task** — Always `READY` and never blocks, so `update_next_task()` always has a valid task to select when all other tasks are blocked.
+- **Idle task** — Always `READY` and never blocks, so `os_schedule_next_task()` always has a valid task to select when all other tasks are blocked.
 
 - **PendSV for context switching** — Chose PendSV instead of doing it in SysTick because PendSV has lower priority, so it only gets executed after all other interrupts. This way we won't exit an interrupt handler due to a context switch, which causes a usage fault. We only pend the PendSV and do the context switch when all other interrupts and exceptions are dealt with.
 
-- **Naked functions** — Used for `switch_sp_to_psp`, `PendSV_Handler`, and `init_scheduler_stack` to deal with the prologue and epilogue of C functions corrupting LR:
-  - `switch_sp_to_psp`: Prologue would push LR to the old stack (MSP), then epilogue would pop from the new stack (PSP) -> corruption
+- **Naked functions** — Used for `port_switch_to_psp`, `PendSV_Handler`, and `port_init_scheduler_stack` (all in the port layer) to deal with the prologue and epilogue of C functions corrupting LR:
+  - `port_switch_to_psp`: Prologue would push LR to the old stack (MSP), then epilogue would pop from the new stack (PSP) -> corruption
   - `PendSV_Handler`: Need manual control over what gets pushed/popped to the stack and where for context switching + function calls corrupt the EXC_RETURN value in LR
-  - `init_scheduler_stack`: Modifying MSP itself, prologue/epilogue would use old/new MSP inconsistently
-- **Race condition in `task_delay`** - Disabled interrupts while setting block_count and current_state to prevent a race condition with SysTick_Handler. Without this, SysTick could increment g_tick_count between reading the value and setting the blocked state, causing the == check in unblock_tasks to miss and leave the task blocked forever.
+  - `port_init_scheduler_stack`: Modifying MSP itself, prologue/epilogue would use old/new MSP inconsistently
+- **Race condition in `os_task_delay`** - Disabled interrupts while setting `wakeup_tick` and `current_state` to prevent a race condition with `SysTick_Handler`. Without this, SysTick could update `systick_count` between reading it and setting the blocked state, corrupting the task's wake-up deadline. `unblock_tasks` compares the signed difference (`systick_count - wakeup_tick >= 0`) so it also stays correct when the tick counter wraps around.
 
 # Peripheral Drivers
 
@@ -176,9 +203,9 @@ Universal Synchronous/Asynchronous Receiver-Transmitter driver supporting USART1
 
 ## Sample Applications
 
-The `sample_applications/` directory contains working examples:
+The `sample_apps/driver/` directory contains working driver examples (kernel demos live in `sample_apps/kernel/`, e.g. `round_robin_priority.c`). Build any of them with `make APP=<path>` (see [Build System](#build-system-makefile)):
 
-| Application | Description |
+| Application (`sample_apps/driver/`) | Description |
 |-------------|-------------|
 | `LED_toggle.c` | Basic GPIO output - toggles onboard LED |
 | `button_LED.c` | GPIO input/output - LED controlled by button press |
@@ -323,7 +350,7 @@ All interrupt handlers are declared as `__attribute__(( weak, alias ("Default_Ha
 
 ## Build System (Makefile)
 
-The make file allows build for standard build (ITM output) and semihosting build.
+A plain `make` build (no IDE required). The kernel and drivers compile into independent static libraries, which link with a selected sample application into one firmware image under `build/`.
 
 ### Configurations: 
 
@@ -334,28 +361,43 @@ The make file allows build for standard build (ITM output) and semihosting build
 
 ### Build Commands
 
-**Standard build** (ITM output) - `make all`
+| Command | Description |
+|---------|-------------|
+| `make` | build the full firmware (`build/final.elf`) |
+| `make kernel` | build only the kernel library (`librtos.a`) — proves it compiles with zero driver dependencies |
+| `make drivers` | build only the driver library (`libdrivers.a`) |
+| `make clean` | remove the `build/` directory |
+| `make load` | flash via OpenOCD (use `arm-none-eabi-gdb` to talk to the OpenOCD server) |
 
-**Semihosting build** (debugger console output) - `make semi`
+### Selecting the Application
 
-**Clean build** (deletes all .o files) - `make clean` 
+The default app is the kernel round-robin demo. Build any other sample by overriding `APP`:
 
-**Load via openOCD** - `make load`
-- use `arm-none-eabi-gdb` to talk to the openOCD server
+```
+make                                        # sample_apps/kernel/round_robin_priority.c (default)
+make APP=sample_apps/driver/LED_toggle.c    # a driver sample
+```
 
-### Linker Specs
+The selected app's own directory is added to the include path automatically.
 
-The standard and semihosting build uses different std libraries. 
-- Standard build: `nano.specs`, uses Newlib-nano for smaller memory footprint
-- Semihost build: `rdimon.specs`, for semihosting support
+### Static Libraries
+
+| Artifact | Built from | Notes |
+|----------|-----------|-------|
+| `build/librtos.a` | `kernel/` + `port/` | the RTOS kernel as a standalone library |
+| `build/libdrivers.a` | `drivers/` | the peripheral HAL as a standalone library |
+
+`librtos.a` is force-linked with `--whole-archive` because it holds the `PendSV`/`SysTick` handlers that `startup.c` only weak-aliases (otherwise the linker keeps the weak stubs and context switching silently dies). `libdrivers.a` links on demand — only the drivers the selected app references. The build uses `nano.specs` (Newlib-nano) for a small footprint.
 
 ### Output Files
 
+All build artifacts go under `build/` (git-ignored), mirroring the source tree:
+
 | File | Description |
 |------|-------------|
-| `final.elf` | Standard build executable |
-| `final_sh.elf` | Semihosting build executable |
-| `final.map` | For both build. Linker map file for symbol addresses and section sizes debugging |
+| `build/final.elf` | the flashable firmware |
+| `build/librtos.a` / `build/libdrivers.a` | kernel / driver static libraries |
+| `build/final.map` | linker map (symbol addresses, section sizes) |
 
 ## Debugging
 
@@ -365,11 +407,7 @@ Printf output is routed to SWV ITM Data Console Port 0 in `syscalls.c` for debug
 
 - This was used in the STM32CudeIDE for debugging when implementing the scheduler since ITM is non-blocking so it doesn't interfere with task timing. 
 
-### Semihosting Output
-
-For semihosting, build with `make semi`. This links with `rdimon.specs` instead of implementing syscalls manually.
-
-- This was coupled with make `make load` to display outputs when implmenting the linker script, startup file and makefile. 
+> Semihosting (`rdimon.specs`) was used during early bring-up to get `printf` over the debugger before syscalls were implemented; it has since been removed in favor of the ITM path above.
 
 ## See It In Action!
 Watch the kernel and peripheral driver sample applications in action: [YouTube Playlist](https://www.youtube.com/playlist?list=PLLaVu9P3il1isXzX8xk3gsnbkaftZR-8b)
@@ -377,6 +415,7 @@ Watch the kernel and peripheral driver sample applications in action: [YouTube P
 
 
 ## Ideas for Future Improvements
-- Add priority levels
+- Synchronization primitives — semaphores, mutexes, message queues (each as its own kernel sample app)
 - Dynamic task creation/deletion
+- Additional ports (Cortex-M0, RISC-V) to exercise the port layer
 - Add stack canaries or MPU protection
