@@ -3,8 +3,11 @@ AR   = arm-none-eabi-ar
 MACH = cortex-m4
 BUILD_DIR = build
 
-# header search paths
-INCLUDES = -Iapp -Ibsp -Iconfig -Ikernel -Iport/arm/cortex_m4 -Idrivers
+# change this to the sample application you want to build, e.g. ` make APP=sample_applications/driver/LED_toggle.c`
+APP ?= sample_apps/kernel/round_robin_priority.c
+
+# header search paths (the selected app's own dir is added so it finds its headers)
+INCLUDES = -I$(dir $(APP)) -Ibsp -Iconfig -Ikernel -Iport/arm/cortex_m4 -Idrivers
 
 CFLAGS     = -c -mcpu=$(MACH) -mthumb -mfloat-abi=soft -std=gnu11 -Wall -O0 -g $(INCLUDES)
 LDFLAGS    = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=nano.specs  -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final.map
@@ -17,7 +20,7 @@ DRIVER_SRCS = drivers/GPIO_driver.c \
               drivers/SPI_driver.c \
               drivers/USART_driver.c \
               drivers/rcc.c
-APP_SRCS    = app/main.c
+APP_SRCS    = $(APP)
 BSP_SRCS    = bsp/startup.c \
               bsp/syscalls.c \
               bsp/sysmem.c
