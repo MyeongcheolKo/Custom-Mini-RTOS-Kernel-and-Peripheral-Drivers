@@ -11,19 +11,6 @@
 #include "main.h"
 #include "osConfig.h"
 
-#define OS_IDLE_TASK_STACK_SIZE 256U
-#define OS_IDLE_STACK_WORDS (OS_IDLE_TASK_STACK_SIZE / sizeof(uint32_t))
-
-// dummy stack macros
-#define DUMMY_XPSR 0x01000000U // only t-bit is needed to set (use Thumb instructions)
-
-#define OS_MAX_TASKS 20
-#define EXC_RETURN_THREAD_PSP 0xFFFFFFFD
-
-#define OS_PRIORITY_HIGHEST 0
-#define OS_PRIORITY_LOWEST 31
-
-
 typedef enum {
 	OS_OK = 0,
 	OS_ERR_INVALID_PRIORITY,
@@ -54,16 +41,18 @@ typedef struct {
 } TCB_t;
 
 /* public interfaces */
-void os_init_systick_timer(uint32_t tick_hz);
-__attribute__ ((naked)) void os_init_scheduler_stack(uint32_t schedu_top_of_stack);
+
+// sets scheduler up and starts the kernel, does not return
+void os_kernel_start(void);
+
+// registers a task with its own private stack; lower priority value = higher priority, valid range 1..OS_PRIORITY_LOWEST (0 is reserved for the idle task)
+// returns OS_OK, or OS_ERR_MAX_TASKS / OS_ERR_INVALID_PRIORITY / OS_ERR_NULL_PTR on failure
 os_err_t os_task_create(void (*task_handler)(void), uint8_t priority, uint32_t *task_stack_base, uint32_t task_stack_size);
-void os_init(void);
-void os_switch_to_psp(void);
-void os_enable_processor_faults(void);
-void os_task_start(void);
+
+// blocks the calling task for tick_count SysTick ticks and yields to the next ready task (no-op when called from the idle task)
 void os_task_delay(uint32_t tick_count);
 
-__attribute__((weak)) void os_idle_task_hook(void) { /*default is nothing, user can override this function*/ }
-
+// optional user hook for the idle task, called once per idle loop iteration
+__attribute__((weak)) void os_idle_task_hook(void) { /*default is empty, user can override this function*/ }
 
 #endif /* SCHEDULER_H_ */

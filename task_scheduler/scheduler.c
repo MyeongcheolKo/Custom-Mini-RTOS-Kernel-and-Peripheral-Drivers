@@ -6,9 +6,16 @@
  */
 #include <stdint.h>
 #include <stdio.h>
-#include "main.h"
 #include "scheduler.h"
 
+// dummy stack macros
+#define DUMMY_STACK_XPSR 0x01000000U // only t-bit is needed to set (use Thumb instructions)
+#define EXC_RETURN_THREAD_PSP 0xFFFFFFFD
+
+#define INTERRUPT_DISABLE() do{__asm volatile("MOV R0,#0X1"); __asm volatile("MSR PRIMASK,R0");} while(0)
+#define INTERRUPT_ENABLE() do{__asm volatile("MOV R0,#0X0"); __asm volatile("MSR PRIMASK,R0");} while(0)
+
+static uint32_t scheduler_stack[OS_SCHEDULER_STACK_WORDS] __attribute__((aligned(8)));
 static uint32_t task_count = 1; // idle task always exists
 static uint32_t current_task = 0;		// start with idle task
 static TCB_t user_tasks[OS_MAX_TASKS];
@@ -16,48 +23,39 @@ static uint32_t systick_count = 0;
 static uint32_t idle_task_stack[OS_IDLE_STACK_WORDS] __attribute__((aligned(8)));
 
 /* os private function prototypes */
+static void init_systick_timer(uint32_t tick_hz);
+static __attribute__ ((naked)) void init_scheduler_stack(uint32_t schedu_top_of_stack);
+static void init_idle_task(void);
+static void set_pendSV_priority_lowest(void);
+static void switch_to_psp(void);
 static uint32_t init_task_stack_frame(void (*task_handler)(void), uint32_t *task_stack_base, uint32_t task_stack_size);
-__attribute__((used)) static void save_sp_value(uint32_t current_psp_val);
-__attribute__((used)) static uint32_t get_sp_value(void);
-__attribute__((used)) static void update_tick_count(void);
+static __attribute__((used)) void save_sp_value(uint32_t current_psp_val);
+static __attribute__((used)) uint32_t get_sp_value(void);
+static __attribute__((used)) void update_tick_count(void);
 static void pend_pendsv(void);
 static void unblock_tasks(void);
-__attribute__((used)) static void schedule_next_task(void);
+static __attribute__((used)) void schedule_next_task(void);
 static void idle_task_hanlder(void);
 
-// configures SysTick to fire at tick_hz interrupts per second using the processor clock
-void os_init_systick_timer(uint32_t tick_hz)
+/*
+starts the kernel: sets up the scheduler stack, idle task, PendSV priority, and SysTick tick, switches to PSP, then dispatches the first task
+call once from main after all os_task_create calls; never returns
+*/
+void os_kernel_start(void)
 {
-	uint32_t count_val = (SYSTICK_CLOCK / tick_hz) - 1;
-	uint32_t *p_SYST_RVR = (uint32_t *)0xE000E014; // systick reload value register
+	uint32_t scheduler_stack_top = (uint32_t)(scheduler_stack + sizeof(scheduler_stack) / sizeof(scheduler_stack[0]));
+	init_scheduler_stack(scheduler_stack_top);
+	
+	init_idle_task();
+	
+	set_pendSV_priority_lowest();
+	
+	init_systick_timer(OS_TICK_HZ);
 
-	// clear the value
-	*p_SYST_RVR &= ~(0x00FFFFFF);
+	switch_to_psp();
 
-	// load the value that will be reloaded into the register when it reaches 0
-	// achieve the desired systick freq by configuring this
-	*p_SYST_RVR |= count_val;
-
-	uint32_t *p_SYST_CSR = (uint32_t *)0xE000E010; //  SysTick Control and Status Register
-	*p_SYST_CSR |= (1 << 1);					   // enable the systick exception request
-	*p_SYST_CSR |= (1 << 2);					   // use processor clock
-	*p_SYST_CSR |= 1;							   // enable the counter
-}
-
-// sets MSP to the top of the scheduler stack where all the handlers run
-__attribute__((naked)) void os_init_scheduler_stack(uint32_t scheduler_top_of_stack)
-{
-	/*
-	naked func here bc MSR MSP writes to the stack before a valid stack exists, so a compiler generated
-	prologue that pushes to MSP would corrupt memory before the stack is set up
-
-	naked forces compiler to not generate prologue and epilogues
-	*/
-
-	// change msp (handler sp) to appropriate address of the scheduler stack
-	__asm volatile("MSR MSP,%0" : : "r"(scheduler_top_of_stack)); // MSR(move to special register)
-	// return to the caller func,
-	__asm volatile("BX LR"); // BX (branch and exchange to a adress) LR(address of the caller)
+	schedule_next_task();
+	user_tasks[current_task].task_handler();
 }
 
 os_err_t os_task_create(void (*task_handler)(void), uint8_t priority, uint32_t *task_stack_base, uint32_t task_stack_size)
@@ -81,22 +79,84 @@ os_err_t os_task_create(void (*task_handler)(void), uint8_t priority, uint32_t *
 	return OS_OK;
 }
 
-// builds a dummy exception stack frame for idle task, call once before os_task_start()
-void os_init(void)
+// blocks the current task for tick_count ticks and yields to the next ready task
+void os_task_delay(uint32_t tick_count)
+{
+	// disable interrupt
+	INTERRUPT_DISABLE();
+
+	// only block the task if it not the idle task
+	if (current_task != 0)
+	{
+		// set wakeup time for the task
+		user_tasks[current_task].wakeup_tick = systick_count + tick_count;
+		// change to blocked state and specify reason
+		user_tasks[current_task].block_reason = BLOCKED_DELAY;
+		user_tasks[current_task].current_state = TASK_BLOCKED;
+		// pend pendSV exception
+		pend_pendsv(); // switches to another task to allow other tasks to run
+	}
+
+	// enable interrupt
+	INTERRUPT_ENABLE();
+}
+
+/*------------static functions-------------*/
+
+// configures SysTick to fire at tick_hz interrupts per second using the processor clock
+static void init_systick_timer(uint32_t tick_hz)
+{
+	uint32_t count_val = (OS_SYSTICK_CLOCK_HZ / tick_hz) - 1;
+	uint32_t *p_SYST_RVR = (uint32_t *)0xE000E014; // systick reload value register
+
+	// clear the value
+	*p_SYST_RVR &= ~(0x00FFFFFF);
+
+	// load the value that will be reloaded into the register when it reaches 0
+	// achieve the desired systick freq by configuring this
+	*p_SYST_RVR |= count_val;
+
+	uint32_t *p_SYST_CSR = (uint32_t *)0xE000E010; //  SysTick Control and Status Register
+	*p_SYST_CSR |= (1 << 1); // enable the systick exception request
+	*p_SYST_CSR |= (1 << 2); // use processor clock
+	*p_SYST_CSR |= 1; // enable the counter
+}
+
+// sets MSP to the top of the scheduler stack where all the handlers run
+static __attribute__((naked)) void init_scheduler_stack(uint32_t scheduler_top_of_stack)
+{
+	/*
+	naked func here bc MSR MSP writes to the stack before a valid stack exists, so a compiler generated
+	prologue that pushes to MSP would corrupt memory before the stack is set up
+
+	naked forces compiler to not generate prologue and epilogues
+	*/
+
+	// change msp (handler sp) to appropriate address of the scheduler stack
+	__asm volatile("MSR MSP,%0" : : "r"(scheduler_top_of_stack)); // MSR(move to special register)
+	// return to the caller func,
+	__asm volatile("BX LR"); // BX (branch and exchange to a adress) LR(address of the caller)
+}
+
+// builds a dummy exception stack frame for idle task
+static void init_idle_task(void)
 {
 	TCB_t *tcb = &user_tasks[0];
 	tcb->task_handler = idle_task_hanlder;
 	tcb->priority_level = 0; // priority 0 reserved for idle task, highest priority
 	tcb->current_state = TASK_READY;
 	tcb->stack_pointer = init_task_stack_frame(idle_task_hanlder, idle_task_stack, sizeof(idle_task_stack));
+}
 
-	// configure PendSV to lowest priority so it is only triggered when no other exceptions are active
+// configure PendSV to lowest priority so it is only triggered when no other exceptions are active
+static void set_pendSV_priority_lowest(void)
+{
 	uint32_t *p_SHPR3 = (uint32_t *)0xE000ED20; // system Handler Priority Register 3
 	*p_SHPR3 |= (0xFFU << 16); // PRI_14 (PendSV) = bits [23:16]
 }
 
 // switches the active stack pointer from MSP to PSP so tasks run on their own private stacks
-__attribute__((naked)) void os_switch_to_psp(void)
+static __attribute__((naked)) void switch_to_psp(void)
 {
 	/*
 	naked func here bc we are calling BL, which corrupts LR, and MSR CONTROL to switch the active
@@ -122,46 +182,6 @@ __attribute__((naked)) void os_switch_to_psp(void)
 	__asm volatile("BX LR"); // return
 }
 
-// dispatches the current task; called once at startup to enter the scheduler from main
-void os_task_start(void)
-{
-	schedule_next_task();
-	user_tasks[current_task].task_handler();
-}
-
-// blocks the current task for tick_count ticks and yields to the next ready task
-void os_task_delay(uint32_t tick_count)
-{
-	// disable interrupt
-	INTERRUPT_DISABLE();
-
-	// only block the task if it not the idle task
-	if (current_task != 0)
-	{
-		// set wakeup time for the task
-		user_tasks[current_task].wakeup_tick = systick_count + tick_count;
-		// change to blocked state and specify reason
-		user_tasks[current_task].block_reason = BLOCKED_DELAY;
-		user_tasks[current_task].current_state = TASK_BLOCKED;
-		// pend pendSV exception
-		pend_pendsv(); // switches to another task to allow other tasks to run
-	}
-
-	// enable interrupt
-	INTERRUPT_ENABLE();
-}
-
-// enables UsageFault, BusFault, and MemManageFault so they trap as their own exceptions
-void os_enable_processor_faults(void)
-{
-	uint32_t *p_SHCSR = (uint32_t *)0xE000ED24;
-	*p_SHCSR |= (1 << 18); // usage fault
-	*p_SHCSR |= (1 << 17); // bus fault
-	*p_SHCSR |= (1 << 16); // mem fault
-}
-
-/*------------static functions-------------*/
-
 // builds the initial dummy stack frame at the top of a stack, returns the PSP
 static uint32_t init_task_stack_frame(void (*task_handler)(void), uint32_t *task_stack_base, uint32_t task_stack_size)
 {
@@ -177,7 +197,7 @@ static uint32_t init_task_stack_frame(void (*task_handler)(void), uint32_t *task
 		LR -> EXC_RETURN, should be 0xFFFFFFFD as we need return to thread with PSP
 	*/
 	// Configure xPSR(program status register)
-	*(--sp) = DUMMY_XPSR; 
+	*(--sp) = DUMMY_STACK_XPSR; 
 	// PC(program counter), hold address of the next instruction to execute, here direct to the corresponding task_handler
 	*(--sp) = (uint32_t)task_handler;
 	/*
@@ -221,7 +241,7 @@ static void pend_pendsv(void)
 	*p_ICSR |= (1 << 28);
 }
 
-// transitions blocked tasks to ready if their wakeup tick has been reached
+// transitions TASK_BLOCKED tasks to TASK_READY if their wakeup tick has been reached
 static void unblock_tasks(void)
 {
 	if (task_count <= 1) return;
@@ -241,7 +261,7 @@ static void unblock_tasks(void)
 	}
 }
 
-// selects the next ready task in priority round-robin order, falls back to idle if all tasks are blocked
+// schedules the next ready task in priority round-robin order, falls back to idle if all tasks are blocked
 static void schedule_next_task(void)
 {
 	// task that was running (and didn't block) goes back to TASK_READY

@@ -30,14 +30,15 @@
 //semihosting init fcn
 extern void initialise_monitor_handles(void);
 
+// enables UsageFault, BusFault, and MemManageFault so they trap as their own exceptions instead of escalating to HardFault
+void enable_processor_faults(void);
+
 void error_hanlder(void);
 
 void task1_handler(void);
 void task2_handler(void);
 void task3_handler(void);
 void task4_handler(void);
-
-uint32_t scheduler_stack[OS_SCHEDULER_STACK_WORDS] __attribute__((aligned(8)));
 
 uint32_t task1_stack[1024] __attribute__((aligned(8)));
 uint32_t task2_stack[1024] __attribute__((aligned(8)));
@@ -49,28 +50,21 @@ int main(void)
 	// keep the debugger awake when the core is sleeping, so can still debug while the core is sleeping
 	*(volatile uint32_t *)0xE0042004 |= (1 << 0); // STM32F4: DBGMCU_CR @ 0xE0042004, bit0 DBG_SLEEP, bit1 DBG_STOP, bit2 DBG_STANDBY
 
- 	os_enable_processor_faults();
-
-	uint32_t scheduler_stack_top = (uint32_t)(scheduler_stack + sizeof(scheduler_stack) / sizeof(scheduler_stack[0]));
-	os_init_scheduler_stack(scheduler_stack_top);
+ 	enable_processor_faults();
 
 	if (os_task_create(task1_handler, 2, task1_stack, sizeof(task1_stack)) != OS_OK) error_hanlder();
 	if (os_task_create(task2_handler, 2, task2_stack, sizeof(task2_stack)) != OS_OK) error_hanlder();
 	if (os_task_create(task3_handler, 1, task3_stack, sizeof(task3_stack)) != OS_OK) error_hanlder();
 	if (os_task_create(task4_handler, 2, task4_stack, sizeof(task4_stack)) != OS_OK) error_hanlder();
 
-	os_init();
-
 	printf("Task schedular initialized\n");
 
-	os_init_systick_timer(TICK_HZ);
+	os_kernel_start();
 
-	os_switch_to_psp();
-
-	os_task_start();
-
-    /* Loop forever */
-	for(;;);
+	while (1)
+	{
+		// should never get here
+	}
 }
 
 void task1_handler(void)
@@ -79,7 +73,7 @@ void task1_handler(void)
 	while(1)
 	{
 		printf("This is task 1\n");
-		os_task_delay(5);
+		os_task_delay(250);
 	}
 }
 void task2_handler(void)
@@ -87,7 +81,7 @@ void task2_handler(void)
 	while(1)
 	{
 		printf("This is task 2 \n");
-		os_task_delay(4);
+		os_task_delay(249);
 
 	}
 }
@@ -112,6 +106,14 @@ void task4_handler(void)
 void error_hanlder(void)
 {
 	while(1);
+}
+
+void enable_processor_faults(void)
+{
+	uint32_t *p_SHCSR = (uint32_t *)0xE000ED24;
+	*p_SHCSR |= (1 << 18); // usage fault
+	*p_SHCSR |= (1 << 17); // bus fault
+	*p_SHCSR |= (1 << 16); // mem fault
 }
 
 
