@@ -13,7 +13,7 @@ CFLAGS     = -c -mcpu=$(MACH) -mthumb -mfloat-abi=soft -std=gnu11 -Wall -O0 -g $
 LDFLAGS    = -mcpu=$(MACH) -mthumb -mfloat-abi=soft --specs=nano.specs  -T bsp/linker_script.ld -Wl,-Map=$(BUILD_DIR)/final.map
 
 # source groups (one per layer) 
-KERNEL_SRCS = kernel/scheduler.c \
+KERNEL_SRCS = kernel/kernel.c \
               port/arm/cortex_m4/port.c
 DRIVER_SRCS = drivers/GPIO_driver.c \
               drivers/I2C_driver.c \

@@ -1,12 +1,12 @@
 /*
- * scheduler.h
+ * os.h
  *
  *  Created on: Dec 23, 2025
  *      Author: krisko
  */
 
-#ifndef SCHEDULER_H_
-#define SCHEDULER_H_
+#ifndef OS_H_
+#define OS_H_
 
 #include "../config/osConfig.h"
 
@@ -55,4 +55,4 @@ void os_task_delay(uint32_t tick_count);
 __attribute__((weak)) void os_idle_task_hook(void) { /*default is empty, user can override this function*/ }
 
 
-#endif /* SCHEDULER_H_ */
+#endif /* OS_H_ */

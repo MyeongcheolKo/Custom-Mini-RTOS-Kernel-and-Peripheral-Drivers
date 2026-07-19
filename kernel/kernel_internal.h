@@ -1,5 +1,5 @@
-#ifndef SCHEDULER_INTERNAL_H_
-#define SCHEDULER_INTERNAL_H_
+#ifndef KERNEL_INTERNAL_H_
+#define KERNEL_INTERNAL_H_
 
 #include <stdint.h>
 
@@ -17,4 +17,4 @@ void os_save_sp_value(uint32_t current_psp_val);
 // schedules the next ready task in priority round-robin order, falls back to idle if all tasks are blocked
 void os_schedule_next_task(void);
 
-#endif
+#endif /* KERNEL_INTERNAL_H_ */

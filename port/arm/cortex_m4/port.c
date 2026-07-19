@@ -1,5 +1,5 @@
 #include "port.h"
-#include "scheduler_internal.h"
+#include "kernel_internal.h"
 #include "osConfig.h"
 
 // dummy stack macros

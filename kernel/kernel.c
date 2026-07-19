@@ -1,13 +1,13 @@
 /*
- * scheduler.c
+ * kernel.c
  *
  *  Created on: Dec 23, 2025
  *      Author: krisko
  */
 #include <stdint.h>
 #include <stdio.h>
-#include "scheduler.h"
-#include "scheduler_internal.h"
+#include "os.h"
+#include "kernel_internal.h"
 #include "../port/arm/cortex_m4/port.h"
 
 static uint32_t scheduler_stack[OS_SCHEDULER_STACK_WORDS] __attribute__((aligned(8)));

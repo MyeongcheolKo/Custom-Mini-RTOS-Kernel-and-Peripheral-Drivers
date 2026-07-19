@@ -26,8 +26,9 @@ The project is organized into layers, each buildable on its own:
 ```
 .
 ├── kernel/                    # portable RTOS core (pure C, no arch code)
-│   ├── scheduler.c/.h         # public API + scheduling logic
-│   └── scheduler_internal.h   # core <-> port interface
+│   ├── kernel.c               # kernel core: scheduling, tasks, tick, delay
+│   ├── os.h                   # public API — apps include this
+│   └── kernel_internal.h      # core <-> port interface
 ├── port/arm/cortex_m4/        # architecture port (all ARM asm + register access)
 │   └── port.c/.h              # context switch, SysTick/PendSV setup, critical sections
 ├── config/
@@ -51,7 +52,7 @@ A preemptive, priority-based scheduler that manages user tasks plus an idle task
 - **Dual Stack Pointers** — MSP for kernel/handlers, PSP for user tasks
 - **Priority scheduling** — On each tick the highest-priority `READY` task is selected (lower priority number = higher priority; `0` reserved for the idle task)
 
-The kernel is split into a **portable core** (`kernel/` — scheduling logic, TCB bookkeeping, blocking/tick handling; pure C) and an **architecture port** (`port/arm/cortex_m4/` — context switch, SysTick/PendSV setup, critical sections; all ARM asm and register access). Applications include a single kernel header — `scheduler.h` — which exposes all public-facing APIs (`scheduler_internal.h`, the core↔port glue stays in a separate header and user should not include it). Only the `port` needs rewriting to target a different architecture.
+The kernel is split into a **portable core** (`kernel/` — scheduling logic, TCB bookkeeping, blocking/tick handling; pure C) and an **architecture port** (`port/arm/cortex_m4/` — context switch, SysTick/PendSV setup, critical sections; all ARM asm and register access). Applications include a single kernel header — `os.h` — which exposes all public-facing APIs (`kernel_internal.h`, the core↔port glue stays in a separate header and user should not include it). Only the `port` needs rewriting to target a different architecture.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      SRAM Layout                        │
