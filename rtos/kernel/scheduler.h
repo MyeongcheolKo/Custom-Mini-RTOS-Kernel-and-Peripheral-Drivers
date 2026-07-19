@@ -8,8 +8,7 @@
 #ifndef SCHEDULER_H_
 #define SCHEDULER_H_
 
-#include "main.h"
-#include "osConfig.h"
+#include "../config/osConfig.h"
 
 typedef enum {
 	OS_OK = 0,
@@ -40,7 +39,7 @@ typedef struct {
 	void (*task_handler)(void);
 } TCB_t;
 
-/* public interfaces */
+/*---------- public APIs ----------*/
 
 // sets scheduler up and starts the kernel, does not return
 void os_kernel_start(void);
@@ -54,5 +53,6 @@ void os_task_delay(uint32_t tick_count);
 
 // optional user hook for the idle task, called once per idle loop iteration
 __attribute__((weak)) void os_idle_task_hook(void) { /*default is empty, user can override this function*/ }
+
 
 #endif /* SCHEDULER_H_ */

@@ -97,4 +97,26 @@ void enable_processor_faults(void)
 	*p_SHCSR |= (1 << 16); // mem fault
 }
 
+void HardFault_Handler(void)
+{
+	printf("hard fault\n");
+	while(1);
+}
 
+void MemManage_Handler(void)
+{
+	printf("mem fault\n");
+	while(1);
+}
+
+void BusFault_Handler(void)
+{
+	printf("bus fault\n");
+	while(1);
+}
+
+void UsageFault_Handler(void)
+{
+	printf("usage fault\n");
+	while(1);
+}
