@@ -121,12 +121,19 @@ void os_schedule_next_task(void)
 	
 	uint8_t task_to_run = 0;
 	uint8_t highest_priority = 255;
-	// finds the next task that is ready to run with highest priority (lowest priority number)
 	if (task_count <= 1) return;
-	for (int i = 1; i < task_count; i++)
+	// finds the next task that is ready to run in round robin order with highest priority (lowest priority number)
+	for (int i = current_task + 1; i < task_count; i++) // start after the current task
 	{
-		if (user_tasks[i].current_state == TASK_READY && 
-			user_tasks[i].priority_level < highest_priority)
+		if (user_tasks[i].current_state == TASK_READY && user_tasks[i].priority_level < highest_priority)
+		{
+			highest_priority = user_tasks[i].priority_level;
+			task_to_run = i;
+		}
+	}
+	for (int i = 1; i <= current_task; i++) // reaches the current task last so it only runs if no other tasks with higher priority are ready, therefor round robin
+	{
+		if (user_tasks[i].current_state == TASK_READY && user_tasks[i].priority_level < highest_priority)
 		{
 			highest_priority = user_tasks[i].priority_level;
 			task_to_run = i;
